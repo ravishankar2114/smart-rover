@@ -1,0 +1,115 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <SoftwareSerial.h>
+
+// Set LCD address (change if different)
+LiquidCrystal_I2C lcd(0x27, 20, 4);
+
+// Bluetooth module connected to pins 10 and 11 (RX, TX)
+SoftwareSerial bluetooth(10, 11);
+
+// Barcode scanner connected to Hardware Serial (pins 0, 1)
+#define BARCODE_SERIAL Serial
+
+// Example products database stored inside the Arduino (barcode, name, price)
+struct Product {
+  const char* barcode;
+  const char* name;
+  int price;
+};
+
+Product products[] = {
+  {"1234567890123", "Tea", 50},
+  {"2345678901234", "Milk", 45},
+  {"3456789012345", "Bread", 30},
+  // Add more as needed
+};
+
+int totalCost = 0;
+String scannedBarcode = "";
+
+void setup() {
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print("Initializing...");
+
+  BARCODE_SERIAL.begin(9600);
+  bluetooth.begin(9600);
+
+  delay(1000);
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Please Scan...");
+}
+
+void loop() {
+  // Read barcode from scanner
+  if (BARCODE_SERIAL.available()) {
+    scannedBarcode = BARCODE_SERIAL.readStringUntil('\n');
+    scannedBarcode.trim();
+    handleScannedBarcode(scannedBarcode);
+  }
+
+  // Listen for commands via Bluetooth (e.g., "PRINT")
+  if (bluetooth.available()) {
+    String command = bluetooth.readStringUntil('\n');
+    command.trim();
+    if (command == "PRINT") {
+      printInvoice();
+    }
+  }
+}
+
+void handleScannedBarcode(String code) {
+  lcd.clear();
+  bool found = false;
+  for (uint8_t i = 0; i < sizeof(products) / sizeof(Product); i++) {
+    if (code == products[i].barcode) {
+      totalCost += products[i].price;
+      lcd.setCursor(0, 0);
+      lcd.print("Added: ");
+      lcd.print(products[i].name);
+      lcd.setCursor(0, 1);
+      lcd.print("Price: Rs.");
+      lcd.print(products[i].price);
+      lcd.setCursor(0, 2);
+      lcd.print("Total: Rs.");
+      lcd.print(totalCost);
+      found = true;
+
+      // Send item added info to Bluetooth (for Android app)
+      bluetooth.print(products[i].name);
+      bluetooth.print(",");
+      bluetooth.print(products[i].price);
+      bluetooth.print(",");
+      bluetooth.print(totalCost);
+      bluetooth.println();
+
+      break;
+    }
+  }
+  if (!found) {
+    lcd.setCursor(0, 0);
+    lcd.print("Item Not Found");
+    bluetooth.println("Item Not Found");
+  }
+  delay(2000);
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Please Scan...");
+}
+
+void printInvoice() {
+  bluetooth.println("==== Invoice ====");
+  bluetooth.print("Total: Rs.");
+  bluetooth.println(totalCost);
+  bluetooth.println("Thank You!");
+  lcd.clear();
+  lcd.setCursor(0, 1);
+  lcd.print("Printing Invoice");
+  delay(2000);
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Please Scan...");
+}
